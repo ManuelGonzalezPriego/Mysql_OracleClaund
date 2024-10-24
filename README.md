@@ -1,7 +1,8 @@
 img {
-  max-width: 100%;
-  height: auto;
-  alaing: center;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+  width: 50%;
 }
 
 # Buenas !
