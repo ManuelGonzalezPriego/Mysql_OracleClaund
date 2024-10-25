@@ -51,6 +51,12 @@ public class Main {
 					case 4:{
 						control=true;
 						System.out.println("Adioossss");
+						try {
+							conn.close();
+						} catch (SQLException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
 						break;
 					}
 					default:{
