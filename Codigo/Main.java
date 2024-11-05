@@ -1,4 +1,4 @@
-package Mysql;
+package MySql;
 
 import java.io.DataOutputStream;
 import java.io.File;
@@ -7,6 +7,7 @@ import java.security.MessageDigest;
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.InputMismatchException;
 import java.util.Scanner;
 import java.io.Console;
 
@@ -20,8 +21,19 @@ public class Main {
 			boolean control=false;
 			do {
 				System.out.println("1.- Alta de usuario. \n2.- Entrada de usuario.\n3.- Listado entradas. \n4.- Salir\n");
-				System.out.println("Inserta la opción:");
-				int menu=teclado.nextInt();
+				int menu=0;
+				
+				try {
+					do{
+						System.out.println("Inserta la opción:");
+						menu=teclado.nextInt();
+					}while(menu==0);
+				}
+				catch(InputMismatchException ex) {
+					System.out.println("Error no has insertado un número...");
+					ex.printStackTrace();
+				}
+				
 				teclado.nextLine();
 				
 				switch(menu) {
@@ -54,7 +66,6 @@ public class Main {
 						try {
 							conn.close();
 						} catch (SQLException e) {
-							// TODO Auto-generated catch block
 							e.printStackTrace();
 						}
 						break;
@@ -68,40 +79,22 @@ public class Main {
 		teclado.close();
 
 	}
-	public static void log(String texto) {
-		File fichero=new File("errores.txt");
-		
-		FileOutputStream fil;
-		try {
-			fil = new FileOutputStream(fichero,true);
-			DataOutputStream escribir= new DataOutputStream(fil);
-			
-			escribir.writeUTF(texto);
-			escribir.close();
-		} catch (Exception e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		
-	}
-	
 	public static boolean login(String login,Connection conn,Scanner teclado) {
 		 boolean resultado = false;
 		 ResultSet rs = null;
 		 try {
-			 rs = buscarUsuario(login, conn);
+			 rs=getUser(login,conn);
 		        
-			 if (rs != null && rs.next()) { 
-		         int id = rs.getInt("idUsuario");
+			 if (rs.next() && rs != null) { 
 		         System.out.println("Inserta la contraseña:");
-		         
-		         if(rs.getString("contrasena").equalsIgnoreCase(hashMD5(teclado.nextLine()))) {
-		        	 insertarEntrada(id, conn);
+		         String contrasena=getPassWd(teclado.nextLine(),conn);
+		         if(rs.getString("contrasena").equals(contrasena)) {
+		        	 insertarEntrada(rs.getInt("idUsuario"), conn);
 			         resultado = true;
 			     }
 		         else {
 		        	 System.out.println("Contraseña incorrecta...");
-		        	 log(String.format("Login:%s, Momento:%s.\n",login,LocalDateTime.now()));
+		        	 log(login,LocalDateTime.now());
 		         }
 		         
 		     } 
@@ -109,15 +102,28 @@ public class Main {
 		    	 System.out.println("Usuario no encontrado.");
 		     }
 		        
-			 if (rs != null) {
-				 rs.close();
-		     }
-
+			 rs.close();
 		}catch (SQLException e) {
 			e.printStackTrace();
 		}
 
 		    return resultado;	
+	}
+	
+	public static void log(String login, LocalDateTime momento) {
+		File fichero=new File("errores.txt");
+		
+		FileOutputStream fil;
+		try {
+			fil = new FileOutputStream(fichero,true);
+			DataOutputStream escribir= new DataOutputStream(fil);
+			
+			escribir.writeBytes(String.format("Login:%s, Momento:%s;\n",login,momento));
+			escribir.close();
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		
 	}
 	
 	public static Usuario crearUsuario(Scanner teclado,Connection conn) {
@@ -129,43 +135,28 @@ public class Main {
 		System.out.println("Inserta el nombre completo:");
 		String nombre=teclado.nextLine();
 		
-		while(!loginOk) {
-			System.out.println("Inserta el login:");
-			login=teclado.nextLine();
-			
-			try {
-				if(!buscarUsuario(login,conn).next()) {
-					loginOk=true;
-				}
-				else {
-					System.out.println("Ya existe dicho login name...");
-
-				}
-			} catch (SQLException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-		}
+		
+		System.out.println("Inserta el login:");
+		login=teclado.nextLine();
 		
 		System.out.println("Inserta la contraseña:");
-		String contrasena=hashMD5(teclado.nextLine());
+		String contrasena=teclado.nextLine();
 		
 		user=new Usuario(login,contrasena,nombre);
 		return user;
 	}
 	
 	public static void insertarUsurio(Usuario usuario, Connection conn) {
-		String nombre=usuario.getNombreCompleto();
-		String login=usuario.getNombreLogin();
-		String contrasena=usuario.getContrasena();
-	    
-	    String in = String.format("INSERT INTO usuarios(nombreLogin, contrasena, nombreCompleto) VALUES('%s', '%s', '%s');",login, contrasena ,nombre);
-	    
 	    try {
-	        conn.createStatement().executeUpdate(in);
+			PreparedStatement insertUser=conn.prepareStatement("INSERT INTO usuarios(nombreLogin, contrasena, nombreCompleto) VALUES(?,?,?);");
+			insertUser.setString(1, usuario.getNombreLogin());
+			insertUser.setString(2, usuario.getContrasena());
+			insertUser.setString(3, usuario.getNombreCompleto());
+	    
+	    	insertUser.executeUpdate();
 	        System.out.println("Se ha creado el usuario con éxito....");
 	    } catch (SQLException e) {
-	        System.out.println("Error no se pudo insertar el usuario....");
+			System.out.println("Ya existe dicho login name...");
 	        e.printStackTrace();
 	    }
 	}
@@ -174,46 +165,36 @@ public class Main {
 		ResultSet rs=null;
 
 		Date id;
-		try {		
-			String consulta=String.format("select * from entradas where idUsuario in (select idUsuario from usuarios where nombreLogin='%s')",login);
-			rs=conn.createStatement().executeQuery(consulta);
-			
-			while(rs.next()) {
-				System.out.println(String.format("idUsuario=%d, idEntrada:%s.",rs.getInt("idUsuario"),rs.getTimestamp("idEntrada")));
+		try {
+			rs=getUser(login,conn);
+			if(rs.next() && rs!=null) {
+				rs.close();
+				PreparedStatement mostrar=conn.prepareStatement("select * from entradas where idUsuario in (select idUsuario from usuarios where nombreLogin=?)");
+				mostrar.setString(1, login);
+				rs=mostrar.executeQuery();
+				
+				
+				while(rs.next()) {
+					System.out.println(String.format("idUsuario=%d, idEntrada:%s.",rs.getInt("idUsuario"),rs.getTimestamp("idEntrada")));
+				}
+			}
+			else {
+				System.out.println("El usuario insertado no existe...");
 			}
 			
 			rs.close();
 		} catch (SQLException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
 	}
 	
-	public static ResultSet buscarUsuario(String login,Connection conn) {
-		ResultSet rs=null;
-
-		String consulta=String.format("Select * from usuarios where nombreLogin='%s';",login);
-		try {
-			rs=conn.createStatement().executeQuery(consulta);
-		} catch (SQLException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		
-		return rs;
-	}
-	
-	public static void insertarEntrada(int id, Connection conn) {
-	    LocalDateTime fechaEntrada = LocalDateTime.now();
-	    
-	    // Formatea la fecha y hora para SQL (YYYY-MM-DD HH:MM:SS)
-	    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-	    String fechaFormateada = fechaEntrada.format(formatter);
-	    
-	    String in = String.format("INSERT INTO entradas(idEntrada, idUsuario) VALUES('%s', %d);", fechaFormateada, id);
-	    
+	public static void insertarEntrada(int id, Connection conn) {	    
 	    try {
-	        conn.createStatement().executeUpdate(in);
+		    PreparedStatement insert=conn.prepareStatement("INSERT INTO entradas(idEntrada, idUsuario) VALUES(?, ?);");
+		    insert.setTimestamp(1, Timestamp.valueOf(LocalDateTime.now()));
+		    insert.setInt(2, id);
+	    
+	        insert.executeUpdate();
 	        System.out.println("Se ha iniciado sesión con éxito....");
 	    } catch (SQLException e) {
 	        System.out.println("Error de sesión....");
@@ -221,7 +202,42 @@ public class Main {
 	    }
 	}
 	
-	public static String hashMD5(String contrasena) {
+	public static String getPassWd(String passWd,Connection conn) {
+		String resultado=null;
+		
+		try {
+			PreparedStatement contrasena=conn.prepareStatement("select sha2(?,224);");
+			contrasena.setString(1, passWd);
+			
+			ResultSet rs=contrasena.executeQuery();
+			rs.next();
+			resultado=rs.getString(1);
+			
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+		
+		
+		return resultado;
+	}
+	
+	public static ResultSet getUser(String logIn,Connection conn) {
+		ResultSet rs=null;
+		
+		try {
+			PreparedStatement id=conn.prepareStatement("select * from usuarios where nombreLogin=?;");
+			id.setString(1, logIn);
+			
+			rs=id.executeQuery();
+		} catch (SQLException e) {
+			e.printStackTrace();
+		}
+		
+		return rs;
+	}
+	
+	//This functions is not used in this version of project, in this version password is encrypted in Mysql
+	/**public static String hashMD5(String contrasena) {
 		StringBuilder hash = new StringBuilder();
 
 		try {
@@ -235,7 +251,7 @@ public class Main {
 		}
 
 		return hash.toString();
-	}
+	}*/
 	
 	public static Connection conexion(Scanner teclado) {
 		Connection conn=null;
@@ -254,12 +270,13 @@ public class Main {
 		
 		
 		try {
-			char passwordArray[]= console.readPassword("Inserta la contraseña: ");
+			//char passwordArray[]= console.readPassword("Inserta la contraseña: ");
 			
-			String password=new String(passwordArray);
+			String password=/**new String(passwordArray);*/teclado.nextLine();
 		
 			conn=DriverManager.getConnection(url, usuario, password);
 		} catch (SQLException e) {
+			System.out.println("Error de conexión....");
 			e.printStackTrace();
 		}catch (Exception e) {
 			e.printStackTrace();

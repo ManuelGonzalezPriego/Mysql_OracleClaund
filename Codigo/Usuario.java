@@ -1,4 +1,4 @@
-package Mysql;
+package MySql;
 
 public class Usuario {
 	String nombreLogin;
