@@ -270,9 +270,9 @@ public class Main {
 		
 		
 		try {
-			//char passwordArray[]= console.readPassword("Inserta la contraseña: ");
+			char passwordArray[]= console.readPassword("Inserta la contraseña: ");
 			
-			String password=/**new String(passwordArray);*/teclado.nextLine();
+			String password=new String(passwordArray);
 		
 			conn=DriverManager.getConnection(url, usuario, password);
 		} catch (SQLException e) {
